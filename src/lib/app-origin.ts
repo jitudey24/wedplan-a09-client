@@ -7,7 +7,7 @@
  * `window.location.origin` as the callback URL, get "Invalid callbackURL",
  * and end up on the backend domain instead of the app.
  */
-const CANONICAL_APP_ORIGIN = "https://wedplan-client-rho.vercel.app";
+const CANONICAL_APP_ORIGIN = "https://wedplan-a09-client.vercel.app";
 
 export function getAppOrigin(): string {
   if (typeof window === "undefined") return CANONICAL_APP_ORIGIN;
