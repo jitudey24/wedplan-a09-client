@@ -290,7 +290,13 @@ function ServiceDetailsContent() {
         const baseUrl =
           process.env.NEXT_PUBLIC_API_BASE_URL ||
           process.env.NEXT_PUBLIC_API_URL ||
-          "http://localhost:5000";
+          (process.env.NODE_ENV === "development"
+            ? "http://localhost:5000"
+            : "");
+
+        if (!baseUrl) {
+          throw new Error("API base URL is not set");
+        }
         const apiUrl = `${baseUrl.replace(/\/+$/, "")}/api/v1/services/${serviceId}`;
 
         const response = await fetch(apiUrl, { cache: "no-store" });
