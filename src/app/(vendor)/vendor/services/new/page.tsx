@@ -127,12 +127,44 @@ export default function AddNewServicePage() {
     });
   };
 
-  const uploadToImgBB = async (file: File): Promise<string> => {
+  // const uploadToImgBB = async (file: File): Promise<string> => {
+  //   const apiKey = process.env.NEXT_PUBLIC_IMGBB_API_KEY;
+
+  //   if (!apiKey) {
+  //     throw new Error(
+  //       "ImgBB API key is missing. Please configure NEXT_PUBLIC_IMGBB_API_KEY.",
+  //     );
+  //   }
+
+  //   const uploadData = new FormData();
+  //   uploadData.append("image", file);
+  //   console.log("uploadData", uploadData);
+  //   const response = await fetch(
+
+  //     `https://api.imgbb.com/1/upload?key=${encodeURIComponent(apiKey)}`,
+  //     {
+  //       method: "POST",
+  //       body: uploadData,
+  //     },
+  //   );
+
+  //   const result = await response.json();
+
+  //   if (!response.ok || !result.success || !result.data?.url) {
+  //     throw new Error(
+  //       result.error?.message || "Unable to upload image to ImgBB.",
+  //     );
+  //   }
+
+  //   return result.data.url;
+  // };
+const uploadToImgBB = async (file: File): Promise<string> => {
+  try {
     const apiKey = process.env.NEXT_PUBLIC_IMGBB_API_KEY;
 
     if (!apiKey) {
       throw new Error(
-        "ImgBB API key is missing. Please configure NEXT_PUBLIC_IMGBB_API_KEY.",
+        "ImgBB API key is missing. Please configure NEXT_PUBLIC_IMGBB_API_KEY."
       );
     }
 
@@ -144,20 +176,28 @@ export default function AddNewServicePage() {
       {
         method: "POST",
         body: uploadData,
-      },
+      }
     );
 
     const result = await response.json();
 
     if (!response.ok || !result.success || !result.data?.url) {
       throw new Error(
-        result.error?.message || "Unable to upload image to ImgBB.",
+        result.error?.message || "Unable to upload image to ImgBB."
       );
     }
 
     return result.data.url;
-  };
+  } catch (error) {
+    console.error("ImgBB Upload Error:", error);
 
+    if (error instanceof Error) {
+      throw new Error(error.message);
+    }
+
+    throw new Error("Something went wrong while uploading the image.");
+  }
+};
   const handleSubmit = async (
     event: React.FormEvent<HTMLFormElement>,
   ) => {

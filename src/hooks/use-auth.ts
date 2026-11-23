@@ -26,7 +26,7 @@ export function useAuth() {
   const router = useRouter();
 
   const { data: session, isPending, error, refetch } = authClient.useSession();
-
+  
   // Refresh session when mobile browser becomes active again.
   React.useEffect(() => {
     const refreshSession = () => {

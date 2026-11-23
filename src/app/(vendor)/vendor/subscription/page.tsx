@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   ArrowRight,
@@ -228,7 +228,7 @@ function SubscriptionContent() {
 
   const sessionId = searchParams.get("session_id");
   const paymentStatus = searchParams.get("payment");
-
+  console.log('searchParams==========', searchParams);
   const isCanceled =
     paymentStatus === "cancelled" || searchParams.get("canceled") === "true";
 
@@ -279,9 +279,12 @@ function SubscriptionContent() {
   }, []);
 
   /* ================= VERIFY STRIPE PAYMENT ================= */
+// const verifiedSessionRef = useRef<string | null>(null);
+
 
   useEffect(() => {
     if (!sessionId) return;
+    console.log('sessionId==============', sessionId);
 
     let active = true;
 
@@ -322,7 +325,6 @@ function SubscriptionContent() {
         }
 
         clearCheckoutParams();
-
         await fetchSubscription();
       } catch (error) {
         if (!active) return;
@@ -455,6 +457,7 @@ function SubscriptionContent() {
           {isVerifying
             ? "Verifying your Stripe payment..."
             : "Loading subscription details..."}
+
         </p>
       </div>
     );
