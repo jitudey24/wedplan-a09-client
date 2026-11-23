@@ -1,4 +1,4 @@
-<!-- # 💍 WedPlan – Wedding Service Marketplace
+# 💍 WedPlan – Wedding Service Marketplace
 
 <p align="center">
   A Modern Platform to Plan Your Perfect Wedding
@@ -276,4 +276,4 @@ Developed as a full-stack web application using modern frontend technologies.
 
 <p align="center">
   <strong>WedPlan – Making Every Wedding Special. ❤️</strong>
-</p> -->
+</p>
