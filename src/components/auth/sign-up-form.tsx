@@ -335,8 +335,10 @@ export function SignUpForm() {
 
       // Must be a backend-trusted origin, even when the phone opened the app
       // through a Vercel preview/deployment URL.
+      const appOrigin = getAppOrigin();
+
       const googleCallbackURL =
-        `${getAppOrigin()}/auth/callback` +
+        `${appOrigin}/auth/callback` +
         `?role=${encodeURIComponent(role)}` +
         redirectQuery;
 
@@ -344,6 +346,8 @@ export function SignUpForm() {
         provider: "google",
         callbackURL: googleCallbackURL,
         newUserCallbackURL: googleCallbackURL,
+        // Auth errors should return to the frontend, not the backend root
+        errorCallbackURL: `${appOrigin}${siteConfig.routes.signIn}`,
       });
 
       if (error) {
