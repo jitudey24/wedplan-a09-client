@@ -13,9 +13,6 @@ const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   (process.env.NODE_ENV === "development" ? "http://localhost:5000" : "");
 
-if (!baseUrl) {
-  throw new Error("API base URL is not set");
-}
 
 export async function POST(req) {
   try {
