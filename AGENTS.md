@@ -1,4 +1,4 @@
-BEGIN:nextjs-agent-rules
+<!-- BEGIN:nextjs-agent-rules
 
 ## This is NOT the Next.js you know
 
@@ -464,4 +464,4 @@ Entry stays `index.js`. Unused `server.js` (ESM stub) and root `routes/index.js`
 - `src/lib/app-origin.ts` (new) — `getAppOrigin()` maps any `*.vercel.app` host to the canonical/trusted `https://wedplan-a09-client.vercel.app`, keeps localhost local, passes custom domains through.
 - `sign-in-form.tsx` / `sign-up-form.tsx` — Google `callbackURL` now uses `getAppOrigin()`, with the bogus `|| window.location.origin + "/dashboard"` fallback removed.
 
-**Verified:** `tsc --noEmit` 0 errors, `eslint src` 0 errors (11 pre-existing warnings), `npm run build` ✓ 31 routes. Local same-origin flow via `http://localhost:3000/api/auth/*`: email sign-in → 200 with cookie set by the **frontend** host, `get-session` → 200 (admin role), `token` → 200 JWT. Existing rewrite in production also verified (`https://wedplan-a09-client.vercel.app/api/auth/get-session` → 200).
+**Verified:** `tsc --noEmit` 0 errors, `eslint src` 0 errors (11 pre-existing warnings), `npm run build` ✓ 31 routes. Local same-origin flow via `http://localhost:3000/api/auth/*`: email sign-in → 200 with cookie set by the **frontend** host, `get-session` → 200 (admin role), `token` → 200 JWT. Existing rewrite in production also verified (`https://wedplan-a09-client.vercel.app/api/auth/get-session` → 200). -->
