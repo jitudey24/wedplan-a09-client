@@ -9,9 +9,9 @@
 </p>
 
 <p align="center">
-  <a href="https://wedplan-client-rho.vercel.app">Live Website</a> •
-  <a href="https://github.com/yousufali01/WedPlan_Client">Frontend Repository</a> •
-  <a href="https://github.com/yousufali01/WedPlan_Server">Backend Repository</a>
+  <a href="https://wedplan-a09-client.vercel.app">Live Website</a> •
+  <a href="https://github.com/jitudey24/wedplan-a09-client">Frontend Repository</a> •
+  <a href="https://github.com/jitudey24/wedplan-a09-server">Backend Repository</a>
 </p>
 
 ---
@@ -122,7 +122,7 @@ The platform provides three role-based experiences: **Customer, Vendor, and Admi
 ## 🏗️ Project Structure
 
 ```text
-WedPlan_Client/
+wedplan-a09-client/
 │
 ├── public/
 │
@@ -168,13 +168,13 @@ WedPlan_Client/
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yousufali01/WedPlan_Client.git
+git clone https://github.com/jitudey24/wedplan-a09-client.git
 ```
 
 ### 2. Navigate to the Project
 
 ```bash
-cd WedPlan_Client
+cd wedplan-a09-client
 ```
 
 ### 3. Install Dependencies
@@ -196,7 +196,7 @@ NEXT_PUBLIC_API_URL=http://localhost:5000
 For the deployed application, use the production backend URL:
 
 ```env
-NEXT_PUBLIC_API_URL=https://wedplan-server-seven.vercel.app
+NEXT_PUBLIC_API_URL=https://wedplan-a09-server-py1h.vercel.app
 ```
 
 If the frontend directly uses ImgBB uploads, configure the public ImgBB API key in the frontend deployment environment as well:
@@ -234,7 +234,7 @@ The frontend communicates with the WedPlan backend through RESTful APIs.
 
 **Production Backend:**
 
-https://wedplan-server-seven.vercel.app
+https://wedplan-a09-server-py1h.vercel.app
 
 The backend provides services for:
 
@@ -257,14 +257,14 @@ The backend provides services for:
 
 ## 🌐 Live Application
 
-**Live Website:** https://wedplan-client-rho.vercel.app
+**Live Website:** https://wedplan-a09-client.vercel.app
 
-**Backend API:** https://wedplan-server-seven.vercel.app
+**Backend API:** https://wedplan-a09-server-py1h.vercel.app
 
 ## 🔗 Project Repositories
 
-- **Frontend:** https://github.com/yousufali01/WedPlan_Client
-- **Backend:** https://github.com/yousufali01/WedPlan_Server
+- **Frontend:** https://github.com/jitudey24/wedplan-a09-client
+- **Backend:** https://github.com/jitudey24/wedplan-a09-server
 
 ## 👨‍💻 Developer
 
