@@ -1,41 +1,37 @@
-
 import { authClient } from "@/lib/auth-client";
 
-const envAPIURL = process.env.NEXT_PUBLIC_API_URL;
+/**
+ * API calls go through the same origin (relative URLs).
+ * `next.config.ts` rewrites `/api/v1/*` to the Express backend, so the
+ * Better Auth session cookie is first-party and is forwarded automatically.
+ *
+ * Set NEXT_PUBLIC_API_URL only if you intentionally want to call the backend
+ * directly (cross-origin). Leave it empty in production.
+ */
+const API_URL: string = (process.env.NEXT_PUBLIC_API_URL || "").replace(
+  /\/+$/,
+  "",
+);
 
-if (!envAPIURL) {
-  throw new Error(
-    "NEXT_PUBLIC_API_URL is missing. Configure your backend URL."
-  );
-}
-
-// Validated API URL
-const API_URL: string = envAPIURL.replace(/\/+$/, "");
-
-export async function apiRequest<T>(
-  endpoint: string,
-  options: RequestInit = {}
-): Promise<T> {
-  let token: string | undefined;
-
-  // Get Better Auth JWT token
+async function getToken(): Promise<string | undefined> {
   try {
     const { data, error } = await authClient.token();
-
-    if (!error && data?.token) {
-      token = data.token;
-    }
+    if (!error && data?.token) return data.token;
   } catch {
     // Session cookie can still authenticate the request.
   }
+  return undefined;
+}
 
-  // Safely merge headers
+export async function apiRequest<T>(
+  endpoint: string,
+  options: RequestInit = {},
+): Promise<T> {
+  const token = await getToken();
+
   const headers = new Headers(options.headers);
 
-  if (
-    !headers.has("Content-Type") &&
-    !(options.body instanceof FormData)
-  ) {
+  if (!headers.has("Content-Type") && !(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
 
@@ -43,20 +39,14 @@ export async function apiRequest<T>(
     headers.set("Authorization", `Bearer ${token}`);
   }
 
-  const cleanEndpoint = endpoint.startsWith("/")
-    ? endpoint
-    : `/${endpoint}`;
+  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
 
-  const response = await fetch(
-    `${API_URL}${cleanEndpoint}`,
-    {
-      ...options,
-      credentials: "include",
-      headers,
-    }
-  );
+  const response = await fetch(`${API_URL}${cleanEndpoint}`, {
+    ...options,
+    credentials: "include",
+    headers,
+  });
 
-  // Handle empty response
   if (response.status === 204) {
     return undefined as T;
   }
@@ -67,16 +57,13 @@ export async function apiRequest<T>(
     ? await response.json()
     : await response.text();
 
-  // Handle API errors
   if (!response.ok) {
     const message =
       typeof result === "object" && result !== null
         ? result.message || result.error
         : result;
 
-    throw new Error(
-      message || `API request failed: ${response.status}`
-    );
+    throw new Error(message || `API request failed: ${response.status}`);
   }
 
   return result as T;
