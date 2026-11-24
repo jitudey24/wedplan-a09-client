@@ -1,3 +1,4 @@
+
 "use client";
 
 import * as React from "react";
@@ -18,9 +19,7 @@ import { authClient } from "@/lib/auth-client";
 import { getAppOrigin } from "@/lib/app-origin";
 import { siteConfig } from "@/config/site";
 
-/* ------------------------------------------------------------------ */
 /* Validation */
-/* ------------------------------------------------------------------ */
 
 const signInSchema = z.object({
   email: z.email("Please enter a valid email address."),
@@ -29,28 +28,29 @@ const signInSchema = z.object({
 
 type SignInValues = z.infer<typeof signInSchema>;
 
-/* ------------------------------------------------------------------ */
+type UserRole = "admin" | "vendor" | "customer";
+
 /* Google Icon */
-/* ------------------------------------------------------------------ */
 
 function GoogleIcon({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 48 48" className={className} aria-hidden="true">
+    <svg
+      viewBox="0 0 48 48"
+      className={className}
+      aria-hidden="true"
+    >
       <path
         fill="#EA4335"
         d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"
       />
-
       <path
         fill="#4285F4"
         d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"
       />
-
       <path
         fill="#FBBC05"
         d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"
       />
-
       <path
         fill="#34A853"
         d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"
@@ -59,15 +59,18 @@ function GoogleIcon({ className }: { className?: string }) {
   );
 }
 
-/* ------------------------------------------------------------------ */
 /* Sign In Form */
-/* ------------------------------------------------------------------ */
 
 export function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
+
   const callbackURL =
-    searchParams.get("callbackURL") || searchParams.get("callbackUrl");
+    searchParams.get("callbackURL") ||
+    searchParams.get("callbackUrl");
+
+  const [showPassword, setShowPassword] = React.useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = React.useState(false);
 
   const {
     register,
@@ -81,62 +84,99 @@ export function SignInForm() {
     },
   });
 
-  const [showPassword, setShowPassword] = React.useState(false);
-
   const {
     data: session,
     isPending,
-    refetch: refetchSession,
   } = authClient.useSession();
 
-  /* Dashboard Redirect */
+  /* Role-based Dashboard */
 
   const getDashboardPath = React.useCallback(
-    (user: { role?: string | null }) => {
-      if (user.role === "admin") {
-        return siteConfig.dashboards.admin;
+    (role?: string | null) => {
+      switch (role) {
+        case "admin":
+          return siteConfig.dashboards.admin;
+
+        case "vendor":
+          return siteConfig.dashboards.vendor;
+
+        default:
+          return siteConfig.dashboards.customer;
       }
-      if (user.role === "vendor") {
-        return siteConfig.dashboards.vendor;
-      }
-      return siteConfig.dashboards.customer;
     },
     [],
   );
 
-  const getRedirectTarget = React.useCallback(
-    (role?: string | null) => {
-      if (
-        callbackURL &&
-        callbackURL.startsWith("/") &&
-        !callbackURL.startsWith("//")
-      ) {
-        return callbackURL;
+  /* Get latest authenticated session and redirect */
+
+  const redirectByRole = React.useCallback(
+    async (fallbackRole?: string | null) => {
+      try {
+        const result = await authClient.getSession();
+
+        const latestUser = result.data?.user as
+          | { role?: string | null }
+          | undefined;
+
+        const role: UserRole =
+          latestUser?.role === "admin"
+            ? "admin"
+            : latestUser?.role === "vendor"
+              ? "vendor"
+              : latestUser?.role === "customer"
+                ? "customer"
+                : fallbackRole === "admin"
+                  ? "admin"
+                  : fallbackRole === "vendor"
+                    ? "vendor"
+                    : "customer";
+
+        router.replace(getDashboardPath(role));
+        router.refresh();
+      } catch (error) {
+        console.error("Session refresh failed:", error);
+
+        router.replace(getDashboardPath(fallbackRole));
+        router.refresh();
       }
-      return getDashboardPath({ role });
     },
-    [callbackURL, getDashboardPath],
+    [router, getDashboardPath],
   );
 
-  /* If already signed in, redirect to the appropriate dashboard or callbackURL */
+  /* Redirect already authenticated users */
 
   React.useEffect(() => {
-    if (isPending || !session?.user) return;
-    const userRole = (session.user as { role?: string }).role;
-    router.replace(getRedirectTarget(userRole));
-  }, [isPending, session, router, getRedirectTarget]);
+    if (isPending || isSubmitting || !session?.user) {
+      return;
+    }
+
+    const user = session.user as typeof session.user & {
+      role?: string | null;
+    };
+
+    router.replace(getDashboardPath(user.role));
+  }, [
+    isPending,
+    isSubmitting,
+    session,
+    router,
+    getDashboardPath,
+  ]);
 
   /* Google Sign In */
 
   const handleGoogleSignIn = async () => {
     try {
-      // Always use a backend-trusted frontend origin (Vercel preview URLs are
-      // not trusted and used to dump mobile users on the backend domain).
+      setIsGoogleLoading(true);
+
       const origin = getAppOrigin();
+
       const redirectQuery = callbackURL
         ? `?redirect=${encodeURIComponent(callbackURL)}`
         : "";
-      const socialCallbackURL = `${origin}/auth/callback${redirectQuery}`;
+
+      const socialCallbackURL =
+        `${origin}/auth/callback${redirectQuery}`;
 
       const { error } = await authClient.signIn.social({
         provider: "google",
@@ -147,12 +187,18 @@ export function SignInForm() {
         toast.error("Google sign-in failed", {
           description: error.message || "Please try again.",
         });
+
+        setIsGoogleLoading(false);
       }
     } catch (error) {
       toast.error("Google sign-in failed", {
         description:
-          error instanceof Error ? error.message : "Please try again.",
+          error instanceof Error
+            ? error.message
+            : "Please try again.",
       });
+
+      setIsGoogleLoading(false);
     }
   };
 
@@ -165,11 +211,11 @@ export function SignInForm() {
         password: values.password,
       });
 
-      // Handle authentication failure
       if (error || !data?.user) {
         toast.error("Could not sign you in", {
           description:
-            error?.message ?? "Please check your email and password.",
+            error?.message ??
+            "Please check your email and password.",
           action: {
             label: "Sign Up",
             onClick: () => {
@@ -179,10 +225,15 @@ export function SignInForm() {
               );
 
               if (callbackURL) {
-                signUpUrl.searchParams.set("callbackURL", callbackURL);
+                signUpUrl.searchParams.set(
+                  "callbackURL",
+                  callbackURL,
+                );
               }
 
-              router.push(`${signUpUrl.pathname}${signUpUrl.search}`);
+              router.push(
+                `${signUpUrl.pathname}${signUpUrl.search}`,
+              );
             },
           },
         });
@@ -190,18 +241,18 @@ export function SignInForm() {
         return;
       }
 
-      // Extract authenticated user information
-      const user = data.user;
-      const userRole = (user as typeof user & { role?: string }).role;
-      const firstName = user.name?.trim().split(/\s+/)[0] || "there";
+      const user = data.user as typeof data.user & {
+        role?: string | null;
+      };
 
-      // Notify successful authentication
+      const firstName =
+        user.name?.trim().split(/\s+/)[0] || "there";
+
       toast.success(`Welcome back, ${firstName}!`, {
         description: "You have signed in successfully.",
       });
 
-      // Navigate to the appropriate destination
-      router.replace(getRedirectTarget(userRole));
+      await redirectByRole(user.role);
     } catch (error) {
       console.error("Sign-in failed:", error);
 
@@ -214,13 +265,12 @@ export function SignInForm() {
     }
   });
 
-  /* ------------------------------------------------------------------ */
   /* UI */
-  /* ------------------------------------------------------------------ */
 
   return (
     <section className="relative flex min-h-[calc(100dvh-4rem)] w-full items-center bg-gradient-to-b from-secondary/60 via-background to-accent/15 py-10">
       <div className="mx-auto grid w-full max-w-6xl items-center gap-10 px-4 sm:px-6 lg:grid-cols-[1.05fr_1fr] lg:gap-16">
+
         {/* Brand Panel */}
 
         <AuthAside
@@ -231,6 +281,7 @@ export function SignInForm() {
         {/* Sign In Card */}
 
         <div className="mx-auto w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-sm sm:p-8">
+
           <div className="flex flex-col items-center gap-2 text-center">
             <div className="lg:hidden">
               <Logo />
@@ -249,7 +300,7 @@ export function SignInForm() {
             </p>
           </div>
 
-          {/* Google Sign In Button */}
+          {/* Google Sign In */}
 
           <div className="mt-6 flex flex-col gap-4">
             <Button
@@ -257,13 +308,21 @@ export function SignInForm() {
               variant="outline"
               className="h-10 w-full"
               onClick={handleGoogleSignIn}
-              disabled={isSubmitting}
+              disabled={isSubmitting || isGoogleLoading}
             >
-              <GoogleIcon className="size-4" />
+              {isGoogleLoading ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <GoogleIcon className="size-4" />
+              )}
+
               Continue with Google
             </Button>
 
-            <div className="flex items-center gap-3" aria-hidden="true">
+            <div
+              className="flex items-center gap-3"
+              aria-hidden="true"
+            >
               <span className="h-px flex-1 bg-border" />
 
               <span className="text-xs uppercase tracking-wider text-muted-foreground">
@@ -281,10 +340,13 @@ export function SignInForm() {
             noValidate
             className="mt-6 flex flex-col gap-5"
           >
+
             {/* Email */}
 
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="email">Email address</Label>
+              <Label htmlFor="email">
+                Email address
+              </Label>
 
               <Input
                 id="email"
@@ -297,7 +359,10 @@ export function SignInForm() {
               />
 
               {errors.email && (
-                <p className="text-xs text-destructive" role="alert">
+                <p
+                  className="text-xs text-destructive"
+                  role="alert"
+                >
                   {errors.email.message}
                 </p>
               )}
@@ -306,7 +371,9 @@ export function SignInForm() {
             {/* Password */}
 
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="password">Password</Label>
+              <Label htmlFor="password">
+                Password
+              </Label>
 
               <div className="relative">
                 <Input
@@ -321,35 +388,53 @@ export function SignInForm() {
 
                 <button
                   type="button"
-                  onClick={() => setShowPassword((visible) => !visible)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
+                  onClick={() =>
+                    setShowPassword((visible) => !visible)
+                  }
+                  aria-label={
+                    showPassword
+                      ? "Hide password"
+                      : "Show password"
+                  }
                   className="absolute right-1.5 top-1/2 grid size-8 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition-colors hover:text-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
                   {showPassword ? (
-                    <EyeOff className="size-4" aria-hidden="true" />
+                    <EyeOff
+                      className="size-4"
+                      aria-hidden="true"
+                    />
                   ) : (
-                    <Eye className="size-4" aria-hidden="true" />
+                    <Eye
+                      className="size-4"
+                      aria-hidden="true"
+                    />
                   )}
                 </button>
               </div>
 
               {errors.password && (
-                <p className="text-xs text-destructive" role="alert">
+                <p
+                  className="text-xs text-destructive"
+                  role="alert"
+                >
                   {errors.password.message}
                 </p>
               )}
             </div>
 
-            {/* Submit Button */}
+            {/* Submit */}
 
             <Button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || isGoogleLoading}
               className="h-11 w-full text-sm"
             >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="animate-spin" aria-hidden="true" />
+                  <Loader2
+                    className="animate-spin"
+                    aria-hidden="true"
+                  />
                   Signing you in…
                 </>
               ) : (
@@ -362,6 +447,7 @@ export function SignInForm() {
 
           <p className="mt-5 border-t border-border pt-5 text-center text-sm text-muted-foreground">
             New to {siteConfig.name}?{" "}
+
             <Link
               href={
                 callbackURL

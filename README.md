@@ -196,7 +196,7 @@ NEXT_PUBLIC_API_URL=http://localhost:5000
 For the deployed application, use the production backend URL:
 
 ```env
-NEXT_PUBLIC_API_URL=https://wedplan-a09-server-py1h.vercel.app
+NEXT_PUBLIC_API_URL=https://wedplan-a09-server.vercel.app/
 ```
 
 If the frontend directly uses ImgBB uploads, configure the public ImgBB API key in the frontend deployment environment as well:
@@ -234,7 +234,7 @@ The frontend communicates with the WedPlan backend through RESTful APIs.
 
 **Production Backend:**
 
-https://wedplan-a09-server-py1h.vercel.app
+https://wedplan-a09-server.vercel.app/
 
 The backend provides services for:
 
@@ -259,7 +259,7 @@ The backend provides services for:
 
 **Live Website:** https://wedplan-a09-client.vercel.app
 
-**Backend API:** https://wedplan-a09-server-py1h.vercel.app
+**Backend API:**https://wedplan-a09-server.vercel.app/
 
 ## 🔗 Project Repositories
 

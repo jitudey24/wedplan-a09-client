@@ -1,8 +1,10 @@
+
 "use client";
 
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
+  AlertCircle,
   ArrowRight,
   Check,
   Crown,
@@ -17,8 +19,7 @@ import {
 import { toast } from "sonner";
 
 import ProtectedRoute from "@/components/auth/ProtectedRoute";
-import { Button } from "@/components/ui/button";
-import { apiRequest } from "@/lib/api";
+import { apiRequest, ApiRequestError } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 /* ================= TYPES ================= */
@@ -64,7 +65,12 @@ type VerifyResponse = {
   subscription?: SubscriptionResponse;
 };
 
-/* ================= PLAN CONFIGURATION ================= */
+type VerificationError = {
+  message: string;
+  retryable: boolean;
+};
+
+/* ================= PLANS ================= */
 
 const plans = [
   {
@@ -132,10 +138,8 @@ const getPlanName = (plan: PlanId) => {
   switch (plan) {
     case "premium_monthly":
       return "Premium Monthly";
-
     case "premium_yearly":
       return "Premium Yearly";
-
     default:
       return "Free";
   }
@@ -162,7 +166,9 @@ const normalizeSubscription = (
   const status = String(raw.status ?? response.status ?? "inactive");
 
   const expiresAt =
-    (raw.expiresAt as string | null | undefined) ?? response.expiresAt ?? null;
+    (raw.expiresAt as string | null | undefined) ??
+    response.expiresAt ??
+    null;
 
   const activeServiceLimit =
     typeof raw.activeServiceLimit === "number"
@@ -172,7 +178,9 @@ const normalizeSubscription = (
         : null;
 
   const activeServices =
-    typeof raw.activeServices === "number" ? raw.activeServices : 0;
+    typeof raw.activeServices === "number"
+      ? raw.activeServices
+      : 0;
 
   const remainingServices =
     typeof raw.remainingServices === "number"
@@ -194,7 +202,9 @@ const normalizeSubscription = (
     plan: planValue,
     status,
     planName:
-      typeof raw.planName === "string" ? raw.planName : getPlanName(planValue),
+      typeof raw.planName === "string"
+        ? raw.planName
+        : getPlanName(planValue),
     price: typeof raw.price === "number" ? raw.price : 0,
     interval:
       typeof raw.interval === "string"
@@ -214,53 +224,141 @@ const normalizeSubscription = (
   };
 };
 
+/* ================= DEBUG ================= */
+
+const STRIPE_DEBUG = true;
+
+const trace = (...args: unknown[]) => {
+  if (STRIPE_DEBUG) {
+    console.info("[stripe-verify]", ...args);
+  }
+};
+
+/* ================= STRIPE VERIFICATION ================= */
+
+const VERIFY_RETRY_DELAY_MS = 1200;
+const VERIFY_MAX_RETRIES = 2;
+
+const wait = (ms: number) =>
+  new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+const requestStripeVerification = async (
+  sessionId: string,
+  attempt = 0,
+): Promise<VerifyResponse> => {
+  trace("POST verification request", {
+    sessionId,
+    attempt,
+  });
+
+  try {
+    const response = await apiRequest<VerifyResponse>(
+      "/api/v1/subscription/verify-stripe-session",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ sessionId }),
+      },
+    );
+
+    trace("Verification response received", response);
+
+    return response;
+  } catch (error) {
+    const status =
+      error instanceof ApiRequestError ? error.status : -1;
+
+    trace("Verification request failed", {
+      status,
+      message: error instanceof Error ? error.message : error,
+    });
+
+    if (status === 409 && attempt < VERIFY_MAX_RETRIES) {
+      await wait(VERIFY_RETRY_DELAY_MS);
+
+      return requestStripeVerification(sessionId, attempt + 1);
+    }
+
+    throw error;
+  }
+};
+
 /* ================= SUBSCRIPTION CONTENT ================= */
 
 function SubscriptionContent() {
   const searchParams = useSearchParams();
 
-  const [subscription, setSubscription] = useState<Subscription | null>(null);
+  const [subscription, setSubscription] =
+    useState<Subscription | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [upgrading, setUpgrading] = useState<PlanId | null>(null);
   const [downgrading, setDowngrading] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
 
-  const sessionId = searchParams.get("session_id");
+  const [verificationError, setVerificationError] =
+    useState<VerificationError | null>(null);
+
+  const rawSessionId =
+    searchParams.get("session_id") ??
+    searchParams.get("sessionId");
+
+  const sessionId = rawSessionId?.trim() || null;
+
   const paymentStatus = searchParams.get("payment");
-  console.log('searchParams==========', searchParams);
+
   const isCanceled =
-    paymentStatus === "cancelled" || searchParams.get("canceled") === "true";
+    paymentStatus === "cancelled" ||
+    searchParams.get("canceled") === "true";
+
+  const handledSessionRef = useRef<string | null>(null);
+  const initialLoadRef = useRef(false);
+  const cancelHandledRef = useRef(false);
 
   /* ================= FETCH SUBSCRIPTION ================= */
 
-  const fetchSubscription = useCallback(async () => {
-    try {
-      const data = await apiRequest<SubscriptionResponse>(
-        "/api/v1/subscription/mine",
-      );
+  const fetchSubscription = useCallback(
+    async (
+      options: { silent?: boolean } = {},
+    ): Promise<Subscription | null> => {
+      trace("Fetching current subscription");
 
-      const normalized = normalizeSubscription(data);
+      try {
+        const data = await apiRequest<SubscriptionResponse>(
+          "/api/v1/subscription/mine",
+        );
 
-      setSubscription(normalized);
-    } catch (error) {
-      toast.error(
-        error instanceof Error ? error.message : "Failed to load subscription.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+        const normalized = normalizeSubscription(data);
 
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      void fetchSubscription();
-    }, 0);
+        trace("Subscription fetched", {
+          plan: normalized?.plan,
+          status: normalized?.status,
+          isPremium: normalized?.isPremium,
+        });
 
-    return () => clearTimeout(timer);
-  }, [fetchSubscription]);
+        setSubscription(normalized);
 
-  /* ================= CLEAR CHECKOUT URL ================= */
+        return normalized;
+      } catch (error) {
+        console.error("Fetch subscription error:", error);
+
+        if (!options.silent) {
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "Failed to load subscription.",
+          );
+        }
+
+        return null;
+      }
+    },
+    [],
+  );
+
+  /* ================= CLEAR CHECKOUT PARAMS ================= */
 
   const clearCheckoutParams = useCallback(() => {
     if (typeof window === "undefined") return;
@@ -268,95 +366,193 @@ function SubscriptionContent() {
     const url = new URL(window.location.href);
 
     url.searchParams.delete("session_id");
+    url.searchParams.delete("sessionId");
     url.searchParams.delete("payment");
     url.searchParams.delete("canceled");
+    url.searchParams.delete("success");
+    url.searchParams.delete("plan");
 
     window.history.replaceState(
-      {},
-      document.title,
+      window.history.state,
+      "",
       `${url.pathname}${url.search}${url.hash}`,
     );
+
+    trace("Checkout query parameters cleared");
   }, []);
 
   /* ================= VERIFY STRIPE PAYMENT ================= */
-// const verifiedSessionRef = useRef<string | null>(null);
 
 
-  useEffect(() => {
-    if (!sessionId) return;
-    console.log('sessionId==============', sessionId);
+const verifyStripeSession = useCallback(
+  async (id: string): Promise<boolean> => {
+    trace("Starting Stripe verification", { id });
+    console.log("🔥 VERIFY FUNCTION CALLED:", id);
 
-    let active = true;
+    setIsVerifying(true);
+    setLoading(true);
+    setVerificationError(null);
 
-    const verifyPayment = async () => {
-      setIsVerifying(true);
+    try {
+      // Step 1: Verify payment with backend
+      console.log("[Stripe] Session ID:", id);
 
-      try {
-        const response = await apiRequest<VerifyResponse>(
-          "/api/v1/subscription/verify-stripe-session",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              sessionId,
-            }),
-          },
+      const response = await requestStripeVerification(id);
+
+      // Step 2: Debug API response
+      console.log("[Stripe] Verification response:", response);
+
+      if (response?.success !== true) {
+        throw new ApiRequestError(
+          response?.message || "Payment verification failed.",
+          400,
         );
-
-        if (!active) return;
-
-        if (!response.success) {
-          throw new Error(response.message || "Payment verification failed.");
-        }
-
-        toast.success(
-          response.message ||
-            "Payment verified! Your Premium subscription is now active.",
-        );
-
-        if (response.subscription) {
-          const normalized = normalizeSubscription(response.subscription);
-
-          if (normalized) {
-            setSubscription(normalized);
-          }
-        }
-
-        clearCheckoutParams();
-        await fetchSubscription();
-      } catch (error) {
-        if (!active) return;
-
-        toast.error(
-          error instanceof Error
-            ? error.message
-            : "Unable to verify payment with Stripe.",
-        );
-
-        clearCheckoutParams();
-      } finally {
-        if (active) {
-          setIsVerifying(false);
-        }
       }
-    };
 
-    const timer = setTimeout(() => {
-      void verifyPayment();
-    }, 0);
+      // Step 3: Normalize subscription
+      const verifiedSubscription = normalizeSubscription(
+        response.subscription,
+      );
 
-    return () => {
-      active = false;
-      clearTimeout(timer);
-    };
-  }, [sessionId, clearCheckoutParams, fetchSubscription]);
+      console.log(
+        "[Stripe] Normalized subscription:",
+        verifiedSubscription,
+      );
+
+      if (!verifiedSubscription) {
+        throw new ApiRequestError(
+          "Payment was verified, but subscription details are missing.",
+          500,
+        );
+      }
+
+      trace("Verified subscription normalized", {
+        plan: verifiedSubscription.plan,
+        status: verifiedSubscription.status,
+        paymentStatus: verifiedSubscription.paymentStatus,
+        isPremium: verifiedSubscription.isPremium,
+      });
+
+      // Step 4: Update subscription UI immediately
+      setSubscription(verifiedSubscription);
+      setVerificationError(null);
+
+      // Step 5: Clear URL parameters after successful verification
+      clearCheckoutParams();
+
+      toast.success(
+        response.message || "Subscription activated successfully!",
+      );
+
+      return true;
+    } catch (error) {
+      console.error("[Stripe] Verification error:", error);
+
+      const status =
+        error instanceof ApiRequestError ? error.status : -1;
+
+      const retryable =
+        status === 0 ||
+        status === 409 ||
+        status === 429 ||
+        status >= 500;
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to verify Stripe payment.";
+
+      trace("Verification failed", {
+        status,
+        retryable,
+        message,
+      });
+
+      setVerificationError({
+        message,
+        retryable,
+      });
+
+      // Clear invalid session parameters only for non-retryable errors
+      if (!retryable) {
+        clearCheckoutParams();
+      }
+
+      // Refresh subscription in background
+      void fetchSubscription({ silent: true });
+
+      toast.error(message);
+
+      return false;
+    } finally {
+      trace("Verification finished");
+
+      setIsVerifying(false);
+      setLoading(false);
+    }
+  },
+  [clearCheckoutParams, fetchSubscription],
+);
+
+
+  /* ================= INITIAL LOAD ================= */
+
+
+useEffect(() => {
+  console.error("🔥🔥 SUBSCRIPTION USEEFFECT RUNNING 🔥🔥");
+  console.log("[Stripe Debug] useEffect executed");
+  console.log("[Stripe Debug] sessionId:", sessionId);
+  console.log(
+    "[Stripe Debug] handledSessionRef:",
+    handledSessionRef.current,
+  );
+
+  trace("Subscription page effect", {
+    sessionId,
+    handled: handledSessionRef.current,
+  });
+
+  if (sessionId) {
+    if (handledSessionRef.current === sessionId) {
+      console.warn("[Stripe Debug] Session already handled:", sessionId);
+      return;
+    }
+
+    console.log("[Stripe Debug] Calling verifyStripeSession:", sessionId);
+
+    handledSessionRef.current = sessionId;
+    initialLoadRef.current = true;
+
+    void verifyStripeSession(sessionId);
+
+    return;
+  }
+
+  console.log("[Stripe Debug] No sessionId found");
+
+  if (initialLoadRef.current) return;
+
+  initialLoadRef.current = true;
+
+  void (async () => {
+    setLoading(true);
+
+    try {
+      await fetchSubscription();
+    } catch (error) {
+      console.error("[Subscription] Fetch failed:", error);
+    } finally {
+      setLoading(false);
+    }
+  })();
+}, [sessionId, verifyStripeSession, fetchSubscription]);
 
   /* ================= CANCELLED PAYMENT ================= */
 
   useEffect(() => {
-    if (!isCanceled) return;
+    if (!isCanceled || cancelHandledRef.current) return;
+
+    cancelHandledRef.current = true;
 
     toast.info(
       "Payment was cancelled. Your existing subscription remains unchanged.",
@@ -364,6 +560,28 @@ function SubscriptionContent() {
 
     clearCheckoutParams();
   }, [isCanceled, clearCheckoutParams]);
+
+  /* ================= RETRY VERIFICATION ================= */
+
+  const handleRetryVerification = useCallback(() => {
+    if (isVerifying) return;
+
+    if (sessionId) {
+      handledSessionRef.current = sessionId;
+      void verifyStripeSession(sessionId);
+      return;
+    }
+
+    void (async () => {
+      setLoading(true);
+
+      try {
+        await fetchSubscription();
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [isVerifying, sessionId, verifyStripeSession, fetchSubscription]);
 
   /* ================= STRIPE CHECKOUT ================= */
 
@@ -380,19 +598,20 @@ function SubscriptionContent() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({
-            planId,
-          }),
+          body: JSON.stringify({ planId }),
         },
       );
 
+      trace("Checkout response", response);
+
       if (!response.success || !response.checkoutUrl) {
         throw new Error(
-          response.message || "Unable to create Stripe checkout session.",
+          response.message ||
+            "Unable to create Stripe checkout session.",
         );
       }
 
-      // Redirect the customer to Stripe Hosted Checkout.
+      // Redirect to Stripe Checkout.
       window.location.assign(response.checkoutUrl);
     } catch (error) {
       console.error("Stripe checkout error:", error);
@@ -434,12 +653,16 @@ function SubscriptionContent() {
         );
       }
 
-      toast.success(response.message || "Subscription cancellation scheduled.");
+      toast.success(
+        response.message || "Subscription cancellation scheduled.",
+      );
 
       await fetchSubscription();
     } catch (error) {
       toast.error(
-        error instanceof Error ? error.message : "Unable to switch plans.",
+        error instanceof Error
+          ? error.message
+          : "Unable to switch plans.",
       );
     } finally {
       setDowngrading(false);
@@ -457,7 +680,6 @@ function SubscriptionContent() {
           {isVerifying
             ? "Verifying your Stripe payment..."
             : "Loading subscription details..."}
-
         </p>
       </div>
     );
@@ -483,7 +705,9 @@ function SubscriptionContent() {
 
             <span className="flex items-center gap-1 rounded-full bg-gold/15 px-2.5 py-1 text-[10px] font-semibold text-foreground">
               <Crown className="size-3 text-gold" />
-              {isPremiumActive ? "Premium Active" : "Secure Card Payment Ready"}
+              {isPremiumActive
+                ? "Premium Active"
+                : "Secure Card Payment Ready"}
             </span>
           </div>
 
@@ -492,22 +716,80 @@ function SubscriptionContent() {
           </h1>
 
           <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            Choose the plan that fits your wedding business. Upgrade to Premium
-            for unlimited services, all booking events access, and featured
-            placement.
+            Choose the plan that fits your wedding business. Upgrade to
+            Premium for unlimited services, all booking events access, and
+            featured placement.
           </p>
         </div>
 
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => void fetchSubscription()}
-          className="w-fit gap-2 border-[#e9e1d8] bg-white"
-        >
-          <RefreshCw className="size-3.5" />
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => void fetchSubscription()}
+            className="flex w-fit items-center gap-2 rounded-lg border border-[#e9e1d8] bg-white px-4 py-2 text-sm font-medium hover:bg-muted"
+          >
+            <RefreshCw className="size-3.5" />
+            Refresh
+          </button>
+
+          {sessionId && (
+            <button
+              type="button"
+              disabled={isVerifying}
+              onClick={handleRetryVerification}
+              className="flex items-center gap-2 rounded-lg border border-primary/30 px-4 py-2 text-sm font-medium text-primary disabled:opacity-50"
+            >
+              Retry Verification
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* VERIFICATION ERROR */}
+
+      {verificationError && (
+        <div
+          role="alert"
+          className="flex flex-col gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="flex items-start gap-3">
+            <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-destructive/10 text-destructive">
+              <AlertCircle className="size-4" />
+            </span>
+
+            <div>
+              <p className="text-sm font-semibold">
+                Payment verification failed
+              </p>
+
+              <p className="mt-0.5 text-xs leading-5 text-muted-foreground">
+                {verificationError.message}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex shrink-0 gap-2">
+            {verificationError.retryable && sessionId && (
+              <button
+                type="button"
+                disabled={isVerifying}
+                onClick={handleRetryVerification}
+                className="rounded-lg border border-primary/30 bg-white px-4 py-2 text-sm font-medium text-primary hover:bg-muted disabled:opacity-50"
+              >
+                Retry Verification
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setVerificationError(null)}
+              className="rounded-lg border border-[#e9e1d8] bg-white px-4 py-2 text-sm font-medium hover:bg-muted"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ACTIVE PLAN STATUS */}
 
@@ -524,7 +806,9 @@ function SubscriptionContent() {
               <Crown
                 className={cn(
                   "size-5",
-                  isPremiumActive ? "text-gold" : "text-muted-foreground",
+                  isPremiumActive
+                    ? "text-gold"
+                    : "text-muted-foreground",
                 )}
               />
               {subscription?.planName || "Free"} Plan
@@ -539,7 +823,9 @@ function SubscriptionContent() {
                     : "bg-primary/10 text-primary",
                 )}
               >
-                {isPremiumActive ? "Active Premium Member" : "Free Tier"}
+                {isPremiumActive
+                  ? "Active Premium Member"
+                  : "Free Tier"}
               </span>
 
               {subscription?.expiresAt && (
@@ -552,7 +838,9 @@ function SubscriptionContent() {
           </div>
 
           <div className="sm:text-right">
-            <p className="text-xs text-muted-foreground">Active Services</p>
+            <p className="text-xs text-muted-foreground">
+              Active Services
+            </p>
 
             <p className="mt-1 text-3xl font-bold tabular-nums">
               <span className="text-primary">
@@ -579,7 +867,9 @@ function SubscriptionContent() {
 
       <section>
         <div className="mb-6">
-          <h2 className="font-heading text-xl font-bold">Choose Your Plan</h2>
+          <h2 className="font-heading text-xl font-bold">
+            Choose Your Plan
+          </h2>
 
           <p className="mt-1 text-xs text-muted-foreground">
             Select your preferred plan and continue to Stripe&apos;s secure
@@ -607,8 +897,6 @@ function SubscriptionContent() {
                       : "border border-[#e9e1d8] bg-white shadow-sm hover:-translate-y-1 hover:shadow-md",
                 )}
               >
-                {/* TOP SHEEN */}
-
                 {isPremiumPlan && (
                   <span
                     className={cn(
@@ -618,15 +906,11 @@ function SubscriptionContent() {
                   />
                 )}
 
-                {/* POPULAR RIBBON */}
-
                 {isRecommended && (
                   <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-gradient-to-r from-[#f4e0a8] via-[#e3c076] to-[#c9a04a] px-4 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[#123528] shadow-[0_6px_16px_rgba(201,162,74,0.45)]">
                     Most Popular
                   </span>
                 )}
-
-                {/* PLAN HEADER */}
 
                 <div className="flex items-center gap-3">
                   <span
@@ -659,8 +943,6 @@ function SubscriptionContent() {
                   </div>
                 </div>
 
-                {/* DESCRIPTION */}
-
                 <p
                   className={cn(
                     "mt-3 min-h-0 text-sm leading-5",
@@ -669,8 +951,6 @@ function SubscriptionContent() {
                 >
                   {plan.description}
                 </p>
-
-                {/* PRICE */}
 
                 <div
                   className={cn(
@@ -692,7 +972,9 @@ function SubscriptionContent() {
                     <span
                       className={cn(
                         "text-sm",
-                        isDark ? "text-white/50" : "text-muted-foreground",
+                        isDark
+                          ? "text-white/50"
+                          : "text-muted-foreground",
                       )}
                     >
                       / {plan.interval}
@@ -702,20 +984,22 @@ function SubscriptionContent() {
                   <p
                     className={cn(
                       "mt-2 text-[11px] font-medium",
-                      isDark ? "text-white/45" : "text-muted-foreground",
+                      isDark
+                        ? "text-white/45"
+                        : "text-muted-foreground",
                     )}
                   >
                     {plan.priceNote}
                   </p>
                 </div>
 
-                {/* FEATURES */}
-
                 <div className="flex-1">
                   <p
                     className={cn(
                       "text-[11px] font-semibold uppercase tracking-[0.14em]",
-                      isDark ? "text-white/40" : "text-muted-foreground",
+                      isDark
+                        ? "text-white/40"
+                        : "text-muted-foreground",
                     )}
                   >
                     What&apos;s included
@@ -723,7 +1007,10 @@ function SubscriptionContent() {
 
                   <ul className="mt-3 space-y-2.5">
                     {plan.features.map((feature) => (
-                      <li key={feature} className="flex items-start gap-3">
+                      <li
+                        key={feature}
+                        className="flex items-start gap-3"
+                      >
                         <span
                           className={cn(
                             "mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full",
@@ -738,7 +1025,9 @@ function SubscriptionContent() {
                         <span
                           className={cn(
                             "text-sm leading-6",
-                            isDark ? "text-white/75" : "text-muted-foreground",
+                            isDark
+                              ? "text-white/75"
+                              : "text-muted-foreground",
                           )}
                         >
                           {feature}
@@ -747,8 +1036,6 @@ function SubscriptionContent() {
                     ))}
                   </ul>
                 </div>
-
-                {/* PAYMENT ACTION */}
 
                 <div className="mt-6 space-y-2">
                   {isCurrent ? (
@@ -779,9 +1066,9 @@ function SubscriptionContent() {
                               : "border-[#e9e1d8] bg-white text-muted-foreground hover:border-primary/40 hover:text-primary",
                           )}
                         >
-                          {downgrading ? (
+                          {downgrading && (
                             <Loader2 className="size-4 animate-spin" />
-                          ) : null}
+                          )}
                           Switch to Free Plan
                         </button>
                       )}
@@ -816,7 +1103,9 @@ function SubscriptionContent() {
                       <p
                         className={cn(
                           "pt-1 text-center text-[10px]",
-                          isDark ? "text-white/40" : "text-muted-foreground",
+                          isDark
+                            ? "text-white/40"
+                            : "text-muted-foreground",
                         )}
                       >
                         <Lock className="mr-1 inline size-3" />
@@ -853,9 +1142,9 @@ function SubscriptionContent() {
             </p>
 
             <p className="mt-0.5 max-w-xl text-xs leading-5 text-muted-foreground">
-              Your card details never touch our servers. Payment information is
-              securely handled by Stripe. Free plan permits up to 3 services and
-              3 booking events; Premium grants unlimited access.
+              Your card details never touch our servers. Payment information
+              is securely handled by Stripe. Free plan permits up to 3
+              services and 3 booking events; Premium grants unlimited access.
             </p>
           </div>
         </div>

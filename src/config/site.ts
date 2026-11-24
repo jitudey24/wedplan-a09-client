@@ -26,7 +26,7 @@ export const siteConfig = {
   contact: {
     email: "hello@wedplan.com",
     phone: "+880 1700-000000",
-    address: "Level 4, House 12, Road 5, Dhanmondi, Dhaka 1205, Bangladesh",
+    address: "Chattogram Bangladesh",
   },
   social: {
     facebook: "https://facebook.com/wedplan",

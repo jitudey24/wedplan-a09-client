@@ -13,7 +13,7 @@ const DEFAULT_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ||
   (process.env.NODE_ENV === "development"
     ? "http://localhost:5000"
-    : "https://wedplan-a09-server-py1h.vercel.app");
+    : "https://wedplan-a09-server.vercel.app");
 
 export function getApiBaseUrl(): string {
   const raw = process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_BASE_URL;
