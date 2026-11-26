@@ -4,12 +4,14 @@
  *
  * Authentication:
  * - Uses Better Auth session cookies.
- * - Supports same-origin Next.js rewrites or a direct backend URL.
+ * - Uses same-origin Next.js rewrites so Better Auth cookies are sent with API requests.
  * - Does not attach stale Bearer tokens.
  * - Every request has a timeout to prevent infinite loading.
  */
 
-const API_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/+$/, "");
+// Keep API requests on the frontend origin. Next.js rewrites proxy /api/*
+// to the backend while preserving the Better Auth session cookie.
+const API_URL = "";
 
 /** How long a single request may stay pending before it is aborted. */
 const REQUEST_TIMEOUT_MS = 25_000;
